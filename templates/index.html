@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Messaging Workspace</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ["DM Sans", "ui-sans-serif", "system-ui"],
+            },
+          },
+        },
+      };
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,700;1,9..40,400&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body class="min-h-screen bg-slate-950 text-slate-100 font-sans">
+    <div class="mx-auto flex min-h-screen max-w-5xl flex-col px-4 py-6">
+      <header class="mb-6 flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <p class="text-xs uppercase tracking-[0.2em] text-cyan-400">Zero-cost realtime</p>
+          <h1 class="text-3xl font-bold tracking-tight">AI Messaging Workspace</h1>
+          <p class="mt-1 text-sm text-slate-400">
+            Join a channel, chat live, and prefix a message with
+            <code class="rounded bg-slate-800 px-1.5 py-0.5 text-cyan-300">@ai</code>
+            for Gemini 2.5 Flash.
+          </p>
+        </div>
+        <div class="rounded-xl border border-slate-800 bg-slate-900 px-4 py-2 text-sm">
+          <span class="text-slate-400">Channel</span>
+          <span id="channel-label" class="ml-2 font-semibold text-cyan-300">not joined</span>
+          <span class="mx-2 text-slate-700">|</span>
+          <span id="presence" class="text-slate-400">0 online</span>
+        </div>
+      </header>
+
+      <section
+        id="join-panel"
+        class="mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-5 shadow-xl shadow-cyan-950/20"
+      >
+        <form id="join-form" class="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+          <input
+            id="username"
+            type="text"
+            required
+            maxlength="40"
+            placeholder="Your name"
+            class="rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 outline-none ring-cyan-500/40 focus:ring-2"
+          />
+          <input
+            id="channel"
+            type="text"
+            required
+            maxlength="40"
+            value="general"
+            placeholder="Channel name"
+            class="rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 outline-none ring-cyan-500/40 focus:ring-2"
+          />
+          <button
+            type="submit"
+            class="rounded-xl bg-cyan-400 px-5 py-3 font-semibold text-slate-950 transition hover:bg-cyan-300"
+          >
+            Join channel
+          </button>
+        </form>
+      </section>
+
+      <main class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/60">
+        <div id="messages" class="flex-1 space-y-3 overflow-y-auto p-5"></div>
+        <div id="ai-status" class="hidden border-t border-cyan-900/60 bg-cyan-950/40 px-5 py-2 text-sm text-cyan-200">
+          Gemini is responding…
+        </div>
+        <form id="chat-form" class="flex gap-3 border-t border-slate-800 p-4">
+          <input
+            id="message"
+            type="text"
+            maxlength="4000"
+            disabled
+            placeholder="Join a channel to start chatting"
+            class="flex-1 rounded-xl border border-slate-700 bg-slate-950 px-4 py-3 outline-none ring-cyan-500/40 focus:ring-2 disabled:opacity-50"
+          />
+          <button
+            id="send-btn"
+            type="submit"
+            disabled
+            class="rounded-xl bg-slate-100 px-5 py-3 font-semibold text-slate-950 disabled:opacity-40"
+          >
+            Send
+          </button>
+        </form>
+      </main>
+    </div>
+
+    <script>
+      const messagesEl = document.getElementById("messages");
+      const joinForm = document.getElementById("join-form");
+      const chatForm = document.getElementById("chat-form");
+      const messageInput = document.getElementById("message");
+      const sendBtn = document.getElementById("send-btn");
+      const aiStatus = document.getElementById("ai-status");
+      const channelLabel = document.getElementById("channel-label");
+      const presenceEl = document.getElementById("presence");
+
+      let socket = null;
+      let username = "";
+      let channelId = "";
+      let aiBubble = null;
+
+      function addBubble({ user, text, kind = "chat" }) {
+        const wrap = document.createElement("div");
+        wrap.className =
+          kind === "ai"
+            ? "rounded-2xl border border-cyan-900/70 bg-cyan-950/40 px-4 py-3"
+            : kind === "error"
+              ? "rounded-2xl border border-rose-900/70 bg-rose-950/40 px-4 py-3"
+              : "rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3";
+        wrap.innerHTML = `
+          <div class="mb-1 text-xs font-semibold uppercase tracking-wide ${kind === "ai" ? "text-cyan-300" : "text-slate-400"}">${escapeHtml(user)}</div>
+          <div class="whitespace-pre-wrap text-sm leading-relaxed">${escapeHtml(text)}</div>
+        `;
+        messagesEl.appendChild(wrap);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+        return wrap;
+      }
+
+      function escapeHtml(value) {
+        return String(value)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;");
+      }
+
+      function setConnected(connected) {
+        messageInput.disabled = !connected;
+        sendBtn.disabled = !connected;
+        messageInput.placeholder = connected
+          ? "Message the channel… use @ai for Gemini"
+          : "Join a channel to start chatting";
+      }
+
+      async function loadHistory(nextChannel) {
+        messagesEl.innerHTML = "";
+        try {
+          const response = await fetch(`/history/${encodeURIComponent(nextChannel)}`);
+          if (!response.ok) throw new Error(`History ${response.status}`);
+          const history = await response.json();
+          if (!history.length) {
+            addBubble({ user: "system", text: `No earlier messages in #${nextChannel}` });
+            return;
+          }
+          for (const item of history) {
+            addBubble({
+              user: item.user,
+              text: item.text,
+              kind: item.kind === "ai" ? "ai" : "chat",
+            });
+          }
+        } catch (error) {
+          addBubble({
+            user: "system",
+            text: `Could not load history: ${error.message || error}`,
+            kind: "error",
+          });
+        }
+      }
+
+      async function connect(nextChannel) {
+        if (socket) {
+          socket.close();
+          socket = null;
+        }
+        aiBubble = null;
+        aiStatus.classList.add("hidden");
+        setConnected(false);
+        await loadHistory(nextChannel);
+        const protocol = location.protocol === "https:" ? "wss" : "ws";
+        socket = new WebSocket(`${protocol}://${location.host}/ws/${encodeURIComponent(nextChannel)}`);
+
+        socket.addEventListener("open", () => {
+          channelId = nextChannel;
+          channelLabel.textContent = `#${nextChannel}`;
+          setConnected(true);
+          addBubble({ user: "system", text: `Joined #${nextChannel}` });
+        });
+
+        socket.addEventListener("message", (event) => {
+          const data = JSON.parse(event.data);
+          if (data.type === "presence") {
+            presenceEl.textContent = `${data.count} online`;
+            return;
+          }
+          if (data.type === "chat") {
+            addBubble({ user: data.user, text: data.text });
+            return;
+          }
+          if (data.type === "ai_start") {
+            aiStatus.classList.remove("hidden");
+            aiBubble = addBubble({ user: "Gemini 2.5 Flash", text: "", kind: "ai" });
+            return;
+          }
+          if (data.type === "ai_chunk" && aiBubble) {
+            const body = aiBubble.querySelector("div:last-child");
+            body.textContent += data.text;
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            return;
+          }
+          if (data.type === "ai_end") {
+            aiStatus.classList.add("hidden");
+            if (aiBubble && data.text) {
+              aiBubble.querySelector("div:last-child").textContent = data.text;
+            }
+            aiBubble = null;
+            return;
+          }
+          if (data.type === "error") {
+            addBubble({ user: "system", text: data.text, kind: "error" });
+          }
+        });
+
+        socket.addEventListener("close", () => {
+          setConnected(false);
+          presenceEl.textContent = "0 online";
+          aiStatus.classList.add("hidden");
+        });
+      }
+
+      joinForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        username = document.getElementById("username").value.trim() || "Guest";
+        const nextChannel = document.getElementById("channel").value.trim() || "general";
+        connect(nextChannel);
+      });
+
+      chatForm.addEventListener("submit", (event) => {
+        event.preventDefault();
+        const text = messageInput.value.trim();
+        if (!text || !socket || socket.readyState !== WebSocket.OPEN) return;
+        socket.send(JSON.stringify({ user: username, text }));
+        messageInput.value = "";
+      });
+    </script>
+  </body>
+</html>
