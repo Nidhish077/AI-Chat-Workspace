@@ -37,8 +37,11 @@ The system features real-time bidirectional messaging, presence tracking, automa
 ├── .gitignore           # Git untracked pattern definitions
 └── templates/
     └── index.html       # Client interface with history loading and WS client
+```
  Getting Started Locally
+ 
 1. Prerequisites
+   
 Python 3.10+
 
 Supabase PostgreSQL connection string (or local PostgreSQL)
@@ -46,10 +49,13 @@ Supabase PostgreSQL connection string (or local PostgreSQL)
 Google Gemini API Key
 
 2. Clone Repository
+
 Bash
 git clone [https://github.com/your-username/ai-chat-workspace.git](https://github.com/your-username/ai-chat-workspace.git)
 cd ai-chat-workspace
-3. Create Virtual Environment & Install Dependencies
+
+4. Create Virtual Environment & Install Dependencies
+   
 Bash
 python -m venv venv
 
@@ -60,14 +66,18 @@ venv\Scripts\activate
 source venv/bin/activate
 
 pip install -r requirements.txt
+
 4. Configure Environment Variables
+
 Create a .env file in the root directory:
 
 Code snippet
 DATABASE_URL=postgresql+asyncpg://postgres:[YOUR-PASSWORD]@[YOUR-HOST]:6543/postgres
 GEMINI_API_KEY=your_gemini_api_key_here
 GEMINI_MODEL=gemini-2.5-flash
+
 5. Run Development Server
+   
 Bash
 uvicorn main:app --reload
 Navigate to http://localhost:8000/ in your browser.
